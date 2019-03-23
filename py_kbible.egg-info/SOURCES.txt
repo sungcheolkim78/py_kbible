@@ -1,0 +1,17 @@
+LICENSE.txt
+MANIFEST.in
+README.md
+setup.cfg
+setup.py
+py_kbible/__init__.py
+py_kbible/kbible.py
+py_kbible.egg-info/PKG-INFO
+py_kbible.egg-info/SOURCES.txt
+py_kbible.egg-info/dependency_links.txt
+py_kbible.egg-info/entry_points.txt
+py_kbible.egg-info/requires.txt
+py_kbible.egg-info/top_level.txt
+py_kbible/data/개역개정판성경.csv.gz
+py_kbible/data/개역한글판성경.csv.gz
+py_kbible/data/표준새번역성경.csv.gz
+py_kbible/data/현대인의성경.csv.gz
