@@ -25,6 +25,15 @@ class KBible(object):
         self._biblelist.append(b)
         self._versionlist.append(version)
 
+    def delete(self, version):
+        """ remove version """
+        if (version in self._versionlist) and (len(self._versionlist) > 1):
+            i = self._versionlist.index(version)
+            del self._versionlist[i]
+            del self._biblelist[i]
+        else:
+            print('... not found or only have one bible version: {}'.format(version))
+
     def bystr(self, sstr, form="pd"):
         """ extract bible verse """
 
@@ -326,21 +335,25 @@ def tidy_footnote(bible_pd, keyword="FOOTNOTE"):
 
     start_word = "__a__{}__a__".format(keyword)
     end_word = "__b__{}__b__".format(keyword)
+    fn_idx = ["a", "b", "c", "d", "e", "f"]
 
+    # search different verses
     for i in bible_pd.index[bible_pd.text.str.contains(start_word)]:
-        text = bible_pd.iloc[i]["text"]
-        ipos = text.find(start_word)
+        # search in one verse
+        text = bible_pd.at[i, "text"]
+        tmp = text.replace("_b_", "_a_").split(start_word)
 
-        # no footnote
-        if ipos == -1:
-            res.append(text)
-            continue
+        bible_pd.at[i, "string"] = tmp[0] + ''.join(tmp[2::2])
 
-        # find last footnote sign
-        fpos = text.rfind(end_word)
-        bible_pd.at[i, "string"] = text[:ipos-1] + text[fpos+len(end_word):]
-        bible_pd.at[i, "md"] = text[:ipos-1] + "[^{}]".format(i) + text[fpos+len(end_word):]
-        bible_pd.at[i, "footnote"] = "[^{}]: {}".format(i,text[ipos+len(start_word):fpos])
+        # check multiple footnotes
+        md = tmp[0]
+        fn = ""
+        for j in range(int(len(tmp)/2)):
+            md = md + "[^{}{}]".format(bible_pd.at[i, "id"], fn_idx[j]) + tmp[j*2 + 2]
+            fn = fn + "[^{}{}]:".format(bible_pd.at[i, "id"], fn_idx[j]) + tmp[j*2 + 1].replace("TR","") + '\n'
+
+        bible_pd.at[i, "md"] = md
+        bible_pd.at[i, "footnote"] = fn
 
     return bible_pd
 
