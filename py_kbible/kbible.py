@@ -1,9 +1,44 @@
+"""
+kbible.py - base bible object and commands
+"""
+
 import pandas as pd
 import yaml
 import os
 
+__author__ = "Sungcheol Kim <sungcheol.kim78@gmail.com>"
+__docformat__ = "restructuredtext en"
 
-def read_bible(version_name="개역한글판성경"):
+class KBible(object):
+    """ Bible text object """
+
+    def __init__(self, version="개역한글판성경", debug=False, **kwargs):
+        """ read or parse bible text """
+
+        self._biblelist = []
+        self.add(version, **kwargs)
+
+    def add(self, version, **kwargs):
+        """ add different version """
+        b = read_full_bible(version_name=version, **kwargs)
+        self._biblelist.append(b)
+
+    def bystr(self, sstr, form="pd"):
+        """ extract bible verse """
+
+        if form in ["string", "md"]:
+            msg = ""
+            for b in self._biblelist:
+                msg = msg + extract_bystr(b, sstr, form=form) + '\n'
+            return msg
+        elif form == "pd":
+            res = pd.DataFrame()
+            for b in self._biblelist:
+                res = pd.concat([res, extract_bystr(b, sstr, form="pd")], axis=0)
+            return res
+
+
+def bible_parser(version_name="개역한글판성경"):
     """ read bible text and return panda database
     inputs:
         version_name : available versions 개역한글판성경, 개역개정판성경
@@ -23,7 +58,7 @@ def read_bible(version_name="개역한글판성경"):
     verses = []
     texts = []
 
-    for line in lines:
+    for i, line in enumerate(lines):
         line = line.strip('\n\r')
 
         # check comment line
@@ -31,25 +66,36 @@ def read_bible(version_name="개역한글판성경"):
             continue
         if line[0] == "#":
             continue
+        if line.find(':') == -1:
+            continue
 
         # find header
         hp = line.find(' ')
-        if hp > 1 and hp < 10:
+        if hp > 1 and hp < 20:
             header = line[:hp]
             text = line[hp+1:]
 
             # find book, chapter, verse, text
-            tmp = header.split(':')[0]
-            chapter = ''.join(filter(str.isdigit, tmp))
-            verse = header.split(':')[1]
-            book = ''.join(filter(str.isalpha, tmp))
+            try:
+                tmp = header.split(':')[0]
+                if tmp.find('.') > 0:   # english bible
+                    book = tmp.split('.')[0]
+                    chapter = tmp.split('.')[1]
+                else:   # korean bible
+                    book = ''.join(filter(str.isalpha, tmp))
+                    chapter = ''.join(filter(str.isdigit, tmp))
+                verse = header.split(':')[1]
+            except:
+                print('... header error: ({}) {}'.format(i, header))
+                continue
 
             # convert data
             try:
                 verse = int(verse)
                 chapter = int(chapter)
             except:
-                print("... parser error! - {}".format(line))
+                print("... conversion error: ({}) {} {}".format(i, verse, chapter))
+                continue
 
             # collect
             books.append(book)
@@ -57,7 +103,7 @@ def read_bible(version_name="개역한글판성경"):
             verses.append(verse)
             texts.append(text)
         else:
-            print("... parser error! - {}".format(line))
+            print("... unrecognized line: ({}) {}".format(i, line))
 
     df_bible = {'book':books, 'chapter':chapters, 'verse':verses, 'text':texts}
     idx = range(len(books))
@@ -81,14 +127,19 @@ def read_full_bible(version_name="개역한글판성경", save=False):
         full_bible = pd.read_csv(filename, index_col=0, compression = "gzip")
         return full_bible
     except FileNotFoundError:
-        print('... generate bible database')
+        print('... generate bible database: {}'.format(filename))
 
-    bible = read_bible(version_name=version_name)
+    bible = bible_parser(version_name=version_name)
 
-    listname = os.path.join(this_dir, "data", "목록표.csv")
+    listname = os.path.join(this_dir, "data", u"book_names.csv")
     table = pd.read_csv(listname, index_col=0)
 
-    full_bible = pd.merge(bible1, table, on='book', how='left')
+    if bible['book'][0] == 'Gen':
+        table['book'] = table['eng_short']
+    else:
+        table['book'] = table['kor_short']
+
+    full_bible = pd.merge(bible, table, on='book', how='left')
 
     if save:
         full_bible.to_csv(filename, compression='gzip')
@@ -112,9 +163,8 @@ def find_id(bible, book=[], chapter=[], verse=[], verb=False):
 
     # check books
     books = set(bible['book'])
-    if "book_long" in bible.columns:
+    if "code" in bible.columns:
         isfullbible = True
-        books_long = set(bible['book_long'])
 
     if len(book) == 0:
         book = books[0]
@@ -123,7 +173,7 @@ def find_id(bible, book=[], chapter=[], verse=[], verb=False):
 
     if verb: print('... search book:{}'.format(book))
     if isfullbible:
-        result = bible.loc[bible.book.isin(book) | bible.book_long.isin(book)]
+        result = bible.loc[bible.kor.isin(book) | bible.kor_short.isin(book) | bible.eng.isin(book) | bible.eng_short.isin(book)]
     else:
         result = bible.loc[bible.book.isin(book)]
 
@@ -217,15 +267,51 @@ def extract_bystr(bible, sstr, form="pd"):
     if form == "pd":
         return res
     if form == "string":
-        return '. '.join(res['text'].values)
+        texts, _ = remove_footnote(res['text'].values, trim=True)
+        return '. '.join(texts)
     if form == "md":
         msg = "`{}` ".format(sstr)
-        return msg + '. '.join(res['text'].values)
+        texts, footnotes = remove_footnote(res['text'].values, trim=False)
+
+        if len(footnotes) > 0:
+            return msg + '. '.join(texts) + '\n' + '\n'.join(footnotes)
+        else:
+            return msg + '. '.join(texts)
 
     print('... no format specified: "pd", "md", "string"')
 
 
-def make_mdpage(bible, day_info, save=False):
+def remove_footnote(texts, keyword="FOOTNOTE", trim=True):
+    """ remove footnote """
+
+    res = []
+    footnotes = []
+    i = 1
+
+    start_word = "__a__{}__a__".format(keyword)
+    end_word = "__b__{}__b__".format(keyword)
+
+    for t in texts:
+        text = str(t)
+        ipos = text.find(start_word)
+
+        # no footnote
+        if ipos == -1:
+            res.append(text)
+            continue
+
+        # find last footnote sign
+        fpos = text.rfind(end_word)
+        if trim:
+            res.append(text[:ipos-1] + text[fpos+len(end_word):])
+        else:
+            res.append(text[:ipos-1] + "[^{}]".format(i) + text[fpos+len(end_word):])
+        footnotes.append("[^{}]: {}".format(i,text[ipos+len(start_word):fpos]))
+        i = i + 1
+
+    return res, footnotes
+
+def make_mdpage(bible, day_info, save_dir=None):
     """ print all verses in list using markdown format
     inputs:
         bible: name of version or panda dataframe
@@ -251,7 +337,7 @@ def make_mdpage(bible, day_info, save=False):
             bible_version = "-" + bible
             bible = read_full_bible(bible)
         except:
-            print("... read error: {}".format(bible_version[1:]))
+            print("... read bible error: {}".format(bible_version[1:]))
             return 0
 
     msg = "# {}일차 - {}\n\n".format(day_info["day"],day_info["title"])
@@ -266,8 +352,8 @@ def make_mdpage(bible, day_info, save=False):
     msg = msg + "### info\n\n"
     msg = msg + "- 성경 구절 갯수 : {}".format(len(day_info["verses"]))
 
-    if save:
-        filename = 'mpages/day{}-{}{}.md'.format(day_info["day"], day_info["title"].replace(" ", ""), bible_version)
+    if save_dir is not None:
+        filename = '{}/day{}-{}{}.md'.format(save_dir, day_info["day"], day_info["title"].replace(" ", ""), bible_version)
         with open(filename, "w") as f:
             f.write(msg)
         print('... save to {}'.format(filename))

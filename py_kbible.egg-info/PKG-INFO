@@ -6,7 +6,18 @@ Home-page: https://github.com/pypa/sampleproject
 Author: Sungcheol Kim
 Author-email: sungcheol.kim78@gmail.com
 License: UNKNOWN
-Description: UNKNOWN
+Description: # py_kbible
+        
+        python library to extract korean bible verse
+        
+        한국어 성경 (개역개정판성경, 개역한글판성경)
+        
+        ## Download source
+        
+        - [hackathon.bible](http://www.hackathon.bible/data.html)
+        - [bible4u.net](https://bible4u.net/en/download)
+        
+        
 Keywords: bible text data
 Platform: UNKNOWN
 Classifier: Development Status :: 3 - Alpha
@@ -20,5 +31,5 @@ Classifier: Programming Language :: Python :: 3.6
 Classifier: Programming Language :: Python :: 3.7
 Requires-Python: >=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, <4
 Description-Content-Type: text/markdown
-Provides-Extra: test
 Provides-Extra: dev
+Provides-Extra: test
