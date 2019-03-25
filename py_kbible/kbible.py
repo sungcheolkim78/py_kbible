@@ -16,12 +16,14 @@ class KBible(object):
         """ read or parse bible text """
 
         self._biblelist = []
+        self._versionlist = []
         self.add(version, **kwargs)
 
     def add(self, version, **kwargs):
         """ add different version """
         b = read_full_bible(version_name=version, **kwargs)
         self._biblelist.append(b)
+        self._versionlist.append(version)
 
     def bystr(self, sstr, form="pd"):
         """ extract bible verse """
@@ -36,6 +38,21 @@ class KBible(object):
             for b in self._biblelist:
                 res = pd.concat([res, extract_bystr(b, sstr, form="pd")], axis=0)
             return res
+
+    def search(self, sstr, form="pd", regex=False):
+        """ search string in bible """
+
+        res = pd.DataFrame()
+        for b in self._biblelist:
+            b_res_idx = b.text.str.contains(sstr, regex=regex)
+            if sum(b_res_idx) > 0:
+                res = pd.concat([res, b[b_res_idx]], axis=0)
+
+        if len(res) > 0:
+            return get_texts(res, form=form)
+        else:
+            print('... no matched results')
+            return []
 
 
 def bible_parser(version_name="개역한글판성경"):
@@ -264,35 +281,54 @@ def extract_bystr(bible, sstr, form="pd"):
     if len(res) == 0:
         return []
 
+    return get_texts(res, form=form, sstr=sstr)
+
+
+def get_texts(bible_pd, form="md", sstr="", sep=""):
+    """ print verses using different format """
+
     if form == "pd":
-        return res
+        return bible_pd
+
+    bible_pd["id"] = bible_pd["book"] + sep + bible_pd["chapter"].astype(str) + ":" + bible_pd["verse"].astype(str)
+    bible_pd = tidy_footnote(bible_pd)
+
     if form == "string":
-        texts, _ = remove_footnote(res['text'].values, trim=True)
-        return '. '.join(texts)
-    if form == "md":
-        msg = "`{}` ".format(sstr)
-        texts, footnotes = remove_footnote(res['text'].values, trim=False)
-
-        if len(footnotes) > 0:
-            return msg + '. '.join(texts) + '\n' + '\n'.join(footnotes)
+        if sstr == "":
+            bible_pd[form] = bible_pd["id"] + " - " + bible_pd[foram].astype(str)
+            msg = '\n'.join(bible_pd[form].values)
         else:
-            return msg + '. '.join(texts)
+            msg = sstr + ' ' + ' '.join(bible_pd[form].values)
+        return msg
 
-    print('... no format specified: "pd", "md", "string"')
+    if form == "md":
+        if sstr == "":
+            bible_pd[form] = "`" + bible_pd["id"] + "` " + bible_pd[form].astype(str)
+            msg = '\n'.join(bible_pd[form].values)
+        else:
+            msg = '`{}` '.format(sstr) + ' '.join(bible_pd[form].values)
+
+        if sum(bible_pd["footnote"] != "") > 0:
+            return msg + '\n' + ''.join(bible_pd["footnote"].values)
+        else:
+            return msg
+
+    print('... {} format is not implemented: ["pd", "md", "string"]'.format(form))
+    return []
 
 
-def remove_footnote(texts, keyword="FOOTNOTE", trim=True):
+def tidy_footnote(bible_pd, keyword="FOOTNOTE"):
     """ remove footnote """
 
-    res = []
-    footnotes = []
-    i = 1
+    bible_pd["md"] = bible_pd["text"]
+    bible_pd["string"] = bible_pd["text"]
+    bible_pd["footnote"] = ""
 
     start_word = "__a__{}__a__".format(keyword)
     end_word = "__b__{}__b__".format(keyword)
 
-    for t in texts:
-        text = str(t)
+    for i in bible_pd.index[bible_pd.text.str.contains(start_word)]:
+        text = bible_pd.iloc[i]["text"]
         ipos = text.find(start_word)
 
         # no footnote
@@ -302,14 +338,12 @@ def remove_footnote(texts, keyword="FOOTNOTE", trim=True):
 
         # find last footnote sign
         fpos = text.rfind(end_word)
-        if trim:
-            res.append(text[:ipos-1] + text[fpos+len(end_word):])
-        else:
-            res.append(text[:ipos-1] + "[^{}]".format(i) + text[fpos+len(end_word):])
-        footnotes.append("[^{}]: {}".format(i,text[ipos+len(start_word):fpos]))
-        i = i + 1
+        bible_pd.at[i, "string"] = text[:ipos-1] + text[fpos+len(end_word):]
+        bible_pd.at[i, "md"] = text[:ipos-1] + "[^{}]".format(i) + text[fpos+len(end_word):]
+        bible_pd.at[i, "footnote"] = "[^{}]: {}".format(i,text[ipos+len(start_word):fpos])
 
-    return res, footnotes
+    return bible_pd
+
 
 def make_mdpage(bible, day_info, save_dir=None):
     """ print all verses in list using markdown format
