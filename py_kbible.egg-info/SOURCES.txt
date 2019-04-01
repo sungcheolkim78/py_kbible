@@ -15,4 +15,5 @@ py_kbible/data/JA1955.csv.gz
 py_kbible/data/WEB.csv.gz
 py_kbible/data/개역개정판성경.csv.gz
 py_kbible/data/개역한글판성경.csv.gz
+py_kbible/data/표준새번역성경.csv.gz
 py_kbible/data/현대인의성경.csv.gz

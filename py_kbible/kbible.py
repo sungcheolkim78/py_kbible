@@ -16,39 +16,59 @@ class KBible(object):
         """ read or parse bible text """
 
         self._biblelist = []
-        self._versionlist = []
+        self._versionlist = {}
         self.add(version, **kwargs)
 
     def add(self, version, **kwargs):
         """ add different version """
         b = read_full_bible(version_name=version, **kwargs)
         self._biblelist.append(b)
-        self._versionlist.append(version)
+        self._versionlist[version] = len(self._biblelist) - 1
 
     def delete(self, version):
         """ remove version """
         if (version in self._versionlist) and (len(self._versionlist) > 1):
-            i = self._versionlist.index(version)
-            del self._versionlist[i]
+            i = self._versionlist[version]
+            del self._versionlist[version]
             del self._biblelist[i]
         else:
             print('... not found or only have one bible version: {}'.format(version))
 
-    def bystr(self, sstr, form="pd"):
+    def save(self, version="개역한글판성경"):
+        """ save bible text as compressed csv """
+
+        if version in self._versionlist:
+            this_dir, this_filename = os.path.split(__file__)
+            filename = os.path.join(this_dir, "data", version + ".csv.gz")
+
+            b = self._biblelist[self._versionlist[version]]
+            b.to_csv(filename, compression='gzip')
+            print('... save file: {}'.format(filename))
+
+    def get(self, version="개역한글판성경"):
+        """ return bible as pandas """
+
+        try:
+            return self._biblelist[self._versionlist[version]]
+        except:
+            print('... no bible version: {}'.format(version))
+            return []
+
+    def bystr(self, sstr, form="md"):
         """ extract bible verse """
 
-        if form in ["string", "md"]:
-            msg = ""
-            for b in self._biblelist:
-                msg = msg + extract_bystr(b, sstr, form=form) + '\n'
-            return msg
-        elif form == "pd":
+        if form == "pd":
             res = pd.DataFrame()
             for b in self._biblelist:
                 res = pd.concat([res, extract_bystr(b, sstr, form="pd")], axis=0)
             return res
+        else:
+            msg = ""
+            for b in self._biblelist:
+                msg = msg + extract_bystr(b, sstr, form=form) + '\n'
+            return msg
 
-    def search(self, sstr, form="pd", regex=False):
+    def search(self, sstr, form="md", regex=False):
         """ search string in bible """
 
         res = pd.DataFrame()
@@ -299,12 +319,17 @@ def get_texts(bible_pd, form="md", sstr="", sep=""):
     if form == "pd":
         return bible_pd
 
-    bible_pd["id"] = bible_pd["book"] + sep + bible_pd["chapter"].astype(str) + ":" + bible_pd["verse"].astype(str)
+    bible_pd.loc[:, "id"] = bible_pd.loc[:, "book"] + sep + bible_pd["chapter"].astype(str) + ":" + bible_pd["verse"].astype(str)
     bible_pd = tidy_footnote(bible_pd)
+
+    if (len(set(bible_pd["book"])) == 1) and (sstr.find(":") == -1):
+        min_v = bible_pd["verse"].min()
+        max_v = bible_pd["verse"].max()
+        sstr = "{}:{}-{}".format(sstr, min_v, max_v)
 
     if form == "string":
         if sstr == "":
-            bible_pd[form] = bible_pd["id"] + " - " + bible_pd[foram].astype(str)
+            bible_pd[form] = bible_pd["id"] + " - " + bible_pd[form].astype(str)
             msg = '\n'.join(bible_pd[form].values)
         else:
             msg = sstr + ' ' + ' '.join(bible_pd[form].values)
@@ -316,6 +341,15 @@ def get_texts(bible_pd, form="md", sstr="", sep=""):
             msg = '\n'.join(bible_pd[form].values)
         else:
             msg = '`{}` '.format(sstr) + ' '.join(bible_pd[form].values)
+
+        if sum(bible_pd["footnote"] != "") > 0:
+            return msg + '\n' + ''.join(bible_pd["footnote"].values)
+        else:
+            return msg
+
+    if form == "mdlines":
+        bible_pd["md"] = "`" + bible_pd["id"] + "` " + bible_pd["md"].astype(str)
+        msg = '\n'.join(bible_pd["md"].values)
 
         if sum(bible_pd["footnote"] != "") > 0:
             return msg + '\n' + ''.join(bible_pd["footnote"].values)
