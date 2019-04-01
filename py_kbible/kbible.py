@@ -45,8 +45,11 @@ class KBible(object):
             b.to_csv(filename, compression='gzip')
             print('... save file: {}'.format(filename))
 
-    def get(self, version="개역한글판성경"):
+    def get(self, version=""):
         """ return bible as pandas """
+
+        if version == "":
+            return self._biblelist[0]
 
         try:
             return self._biblelist[self._versionlist[version]]
@@ -182,6 +185,8 @@ def read_full_bible(version_name="개역한글판성경", save=False):
 
     if bible['book'][0] == 'Gen':
         table['book'] = table['eng_short']
+    elif bible['book'][0] == 'Genesis':
+        table['book'] = table['eng']
     else:
         table['book'] = table['kor_short']
 
