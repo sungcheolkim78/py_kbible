@@ -5,6 +5,7 @@ kbible.py - base bible object and commands
 import pandas as pd
 import yaml
 import os
+import subprocess
 
 __author__ = "Sungcheol Kim <sungcheol.kim78@gmail.com>"
 __docformat__ = "restructuredtext en"
@@ -17,6 +18,11 @@ class KBible(object):
 
         self._biblelist = []
         self._versionlist = {}
+
+        this_dir, this_filename = os.path.split(__file__)
+        listname = os.path.join(this_dir, "data", u"book_names.csv")
+        self._table = pd.read_csv(listname, index_col=0)
+
         self.add(version, **kwargs)
 
     def add(self, version, **kwargs):
@@ -86,6 +92,17 @@ class KBible(object):
             print('... no matched results')
             return []
 
+    def read(self, sstr, form='mdlines'):
+        """ search by short index string and show in markdown file """
+
+        msg = self.bystr(sstr, form=form)
+
+        with open('.temp.md', 'w') as f:
+            f.writelines(msg)
+
+        cmd = ['open', '.temp.md']
+        subprocess.call(cmd)
+
 
 def bible_parser(version_name="개역한글판성경"):
     """ read bible text and return panda database
@@ -120,16 +137,19 @@ def bible_parser(version_name="개역한글판성경"):
 
         # find header
         hp = line.find(' ')
-        if hp > 1 and hp < 20:
+        if hp > 1 and hp < 25:
             header = line[:hp]
             text = line[hp+1:]
 
             # find book, chapter, verse, text
             try:
                 tmp = header.split(':')[0]
-                if tmp.find('.') > 0:   # english bible
+                if tmp.find('.') > 0:   # english bible short name
                     book = tmp.split('.')[0]
                     chapter = tmp.split('.')[1]
+                elif tmp[:2] in ["1_", "2_", "3_"]:     # english bible long name
+                    book = tmp[:2] + ''.join(filter(str.isalpha, tmp[2:]))
+                    chapter = ''.join(filter(str.isdigit, tmp[2:]))
                 else:   # korean bible
                     book = ''.join(filter(str.isalpha, tmp))
                     chapter = ''.join(filter(str.isdigit, tmp))
@@ -224,7 +244,7 @@ def find_id(bible, book=[], chapter=[], verse=[], verb=False):
 
     if verb: print('... search book:{}'.format(book))
     if isfullbible:
-        result = bible.loc[bible.kor.isin(book) | bible.kor_short.isin(book) | bible.eng.isin(book) | bible.eng_short.isin(book)]
+        result = bible.loc[bible.kor.isin(book) | bible.kor_short.isin(book) | bible.eng.isin(book) | bible.eng_short.isin(book) | bible.book.isin(book)]
     else:
         result = bible.loc[bible.book.isin(book)]
 
@@ -318,13 +338,17 @@ def extract_bystr(bible, sstr, form="pd"):
     return get_texts(res, form=form, sstr=sstr)
 
 
-def get_texts(bible_pd, form="md", sstr="", sep=""):
+def get_texts(bible_pd, form="md", sstr="", sep="", text_width=0):
     """ print verses using different format """
 
     if form == "pd":
         return bible_pd
 
-    bible_pd.loc[:, "id"] = bible_pd.loc[:, "book"] + sep + bible_pd["chapter"].astype(str) + ":" + bible_pd["verse"].astype(str)
+    if len(bible_pd["book"]) == 0:
+        return ""
+
+    # show id as kor_short
+    bible_pd.loc[:, "id"] = bible_pd.loc[:, "kor_short"] + sep + bible_pd["chapter"].astype(str) + ":" + bible_pd["verse"].astype(str)
     bible_pd = tidy_footnote(bible_pd)
 
     if (len(set(bible_pd["book"])) == 1) and (sstr.find(":") == -1):
@@ -345,7 +369,8 @@ def get_texts(bible_pd, form="md", sstr="", sep=""):
             bible_pd[form] = "`" + bible_pd["id"] + "` " + bible_pd[form].astype(str)
             msg = '\n'.join(bible_pd[form].values)
         else:
-            msg = '`{}` '.format(sstr) + ' '.join(bible_pd[form].values)
+            verse_string_list = [ '<sup>{}</sup> {}'.format(v, l) for v,l in zip(bible_pd['verse'], bible_pd[form]) ]
+            msg = '`{}` '.format(sstr) + ' '.join(verse_string_list)
 
         if sum(bible_pd["footnote"] != "") > 0:
             return msg + '\n' + ''.join(bible_pd["footnote"].values)
